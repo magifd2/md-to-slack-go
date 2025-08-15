@@ -45,17 +45,30 @@ func Convert(markdown string) (*slack.SlackBlockKit, error) {
 				}
 			}
 		case *ast.Blockquote:
-			quote := astToMrkdwn(n, source)
-			lines := strings.Split(quote, "\n")
-			var quoteText strings.Builder
-			for i, line := range lines {
-				quoteText.WriteString("> ")
-				quoteText.WriteString(line)
-				if i < len(lines)-1 {
-					quoteText.WriteString("\n")
+			var quoteLines []string
+			for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+				if para, ok := child.(*ast.Paragraph); ok {
+					for i := 0; i < para.Lines().Len(); i++ {
+						line := para.Lines().At(i)
+						// 末尾の改行を除去
+						text := strings.TrimRight(string(line.Value(source)), "\n")
+						if strings.TrimSpace(text) != "" {
+							quoteLines = append(quoteLines, "> "+text)
+						}
+					}
+				} else {
+					text := astToMrkdwn(child, source)
+					for _, line := range strings.Split(text, "\n") {
+						if strings.TrimSpace(line) != "" {
+							quoteLines = append(quoteLines, "> "+line)
+						}
+					}
 				}
 			}
-			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: quoteText.String()}})
+			blocks = append(blocks, slack.SectionBlock{
+				Type: "section",
+				Text: slack.TextBlock{Type: "mrkdwn", Text: strings.Join(quoteLines, "\n")},
+			})
 		case *ast.FencedCodeBlock:
 			lang := string(n.Info.Text(source))
 			var codeLines []string
@@ -74,7 +87,7 @@ func Convert(markdown string) (*slack.SlackBlockKit, error) {
 				for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
 					headerCells = append(headerCells, slack.CreateRichTextCell(string(cell.Text(source)), true))
 				}
-			tableRows = append(tableRows, headerCells)
+				tableRows = append(tableRows, headerCells)
 				for row := header.NextSibling(); row != nil; row = row.NextSibling() {
 					var rowCells []slack.RichTextObject
 					for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
