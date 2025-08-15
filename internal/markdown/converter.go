@@ -23,104 +23,140 @@ func Convert(markdown string) (*slack.SlackBlockKit, error) {
 
 	var blocks []interface{}
 	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
-		switch node.Kind() {
-		case ast.KindHeading:
-			heading := node.(*ast.Heading)
-			if heading.Level <= 2 {
-				blocks = append(blocks, slack.HeaderBlock{Type: "header", Text: slack.TextBlock{Type: "plain_text", Text: string(heading.Text(source)), Emoji: true}})
+		switch n := node.(type) {
+		case *ast.Heading:
+			if n.Level <= 2 {
+				blocks = append(blocks, slack.HeaderBlock{Type: "header", Text: slack.TextBlock{Type: "plain_text", Text: string(n.Text(source)), Emoji: true}})
 			} else {
-				blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", string(heading.Text(source)))}})
+				blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", string(n.Text(source)))}})
 			}
-		case ast.KindParagraph:
-			text := astToMrkdwn(node, source)
-			if strings.TrimSpace(text) != "" {
-				blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: text}})
+		case *ast.Paragraph:
+			if n.ChildCount() == 1 && n.FirstChild().Kind() == ast.KindImage {
+				img := n.FirstChild().(*ast.Image)
+				blocks = append(blocks, slack.ImageBlock{
+					Type:     "image",
+					ImageURL: string(img.Destination),
+					AltText:  string(img.Text(source)),
+				})
+			} else {
+				text := astToMrkdwn(n, source)
+				if strings.TrimSpace(text) != "" {
+					blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: text}})
+				}
 			}
-		case ast.KindBlockquote:
-			quote := astToMrkdwn(node, source)
+		case *ast.Blockquote:
+			quote := astToMrkdwn(n, source)
 			lines := strings.Split(quote, "\n")
-			for i := range lines {
-				lines[i] = "> " + lines[i]
+			var quoteText strings.Builder
+			for i, line := range lines {
+				quoteText.WriteString("> ")
+				quoteText.WriteString(line)
+				if i < len(lines)-1 {
+					quoteText.WriteString("\n")
+				}
 			}
-			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: strings.Join(lines, "\n")}})
-		case ast.KindFencedCodeBlock:
-			codeBlock := node.(*ast.FencedCodeBlock)
-			lang := string(codeBlock.Info.Text(source))
+			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: quoteText.String()}})
+		case *ast.FencedCodeBlock:
+			lang := string(n.Info.Text(source))
 			var codeLines []string
-			for i := 0; i < codeBlock.Lines().Len(); i++ {
-				line := codeBlock.Lines().At(i)
+			for i := 0; i < n.Lines().Len(); i++ {
+				line := n.Lines().At(i)
 				codeLines = append(codeLines, string(line.Value(source)))
 			}
 			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("```%s\n%s```", lang, strings.Join(codeLines, ""))}})
-		case ast.KindThematicBreak:
+		case *ast.ThematicBreak:
 			blocks = append(blocks, slack.DividerBlock{Type: "divider"})
-		case extast.KindTable:
-			tableNode := node.(*extast.Table)
+		case *extast.Table:
 			var tableRows [][]slack.RichTextObject
-
-			// The first child of a Table is the Header row.
-			headerRow := tableNode.FirstChild()
-			if headerRow != nil {
+			header := n.FirstChild()
+			if header != nil {
 				var headerCells []slack.RichTextObject
-				for cell := headerRow.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
 					headerCells = append(headerCells, slack.CreateRichTextCell(string(cell.Text(source)), true))
 				}
-				tableRows = append(tableRows, headerCells)
-
-				// Process the rest of the rows (the body).
-				for rowNode := headerRow.NextSibling(); rowNode != nil; rowNode = rowNode.NextSibling() {
-					var dataCells []slack.RichTextObject
-					for cell := rowNode.FirstChild(); cell != nil; cell = cell.NextSibling() {
-						dataCells = append(dataCells, slack.CreateRichTextCell(string(cell.Text(source)), false))
+			tableRows = append(tableRows, headerCells)
+				for row := header.NextSibling(); row != nil; row = row.NextSibling() {
+					var rowCells []slack.RichTextObject
+					for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+						rowCells = append(rowCells, slack.CreateRichTextCell(string(cell.Text(source)), false))
 					}
-					tableRows = append(tableRows, dataCells)
+					tableRows = append(tableRows, rowCells)
 				}
 			}
-
-			blocks = append(blocks, slack.TableBlock{
-				Type: "table",
-				Rows: tableRows,
-			})
+			blocks = append(blocks, slack.TableBlock{Type: "table", Rows: tableRows})
+		case *ast.List:
+			listText := listToMrkdwn(n, source, 0)
+			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: listText}})
 		}
 	}
 	return &slack.SlackBlockKit{Blocks: blocks}, nil
+}
+
+func listToMrkdwn(l *ast.List, source []byte, depth int) string {
+	var buf bytes.Buffer
+	indent := strings.Repeat("  ", depth)
+
+	for c := l.FirstChild(); c != nil; c = c.NextSibling() {
+		item := c.(*ast.ListItem)
+
+		marker := "- "
+		if l.IsOrdered() {
+			i := 0
+			for p := c.PreviousSibling(); p != nil; p = p.PreviousSibling() {
+				i++
+			}
+			marker = fmt.Sprintf("%d. ", l.Start+i)
+		}
+
+		buf.WriteString(indent)
+		buf.WriteString(marker)
+
+		var contentBuf bytes.Buffer
+		for child := item.FirstChild(); child != nil; child = child.NextSibling() {
+			if child.Kind() == ast.KindList {
+				contentBuf.WriteString("\n")
+				contentBuf.WriteString(listToMrkdwn(child.(*ast.List), source, depth+1))
+			} else {
+				contentBuf.WriteString(astToMrkdwn(child, source))
+			}
+		}
+		buf.WriteString(contentBuf.String())
+		buf.WriteString("\n")
+	}
+	return strings.TrimSuffix(buf.String(), "\n")
 }
 
 // astToMrkdwn recursively traverses AST nodes and converts them to a Slack mrkdwn formatted string.
 func astToMrkdwn(node ast.Node, source []byte) string {
 	var buf bytes.Buffer
 	for c := node.FirstChild(); c != nil; c = c.NextSibling() {
-		switch c.Kind() {
-		case ast.KindText:
-			buf.WriteString(string(c.(*ast.Text).Text(source)))
-		case ast.KindString:
-			buf.WriteString(string(c.(*ast.String).Value))
-		case ast.KindCodeSpan:
+		switch n := c.(type) {
+		case *ast.Text:
+			buf.WriteString(string(n.Text(source)))
+		case *ast.String:
+			buf.WriteString(string(n.Value))
+		case *ast.CodeSpan:
 			buf.WriteString("`")
-			buf.WriteString(string(c.(*ast.CodeSpan).Text(source)))
+			buf.WriteString(string(n.Text(source)))
 			buf.WriteString("`")
-		case ast.KindEmphasis:
-			em := c.(*ast.Emphasis)
+		case *ast.Emphasis:
 			marker := "_"
-			if em.Level == 2 {
+			if n.Level == 2 {
 				marker = "*"
 			}
 			buf.WriteString(marker)
-			buf.WriteString(astToMrkdwn(c, source))
+			buf.WriteString(astToMrkdwn(n, source))
 			buf.WriteString(marker)
-		case ast.KindLink:
-			link := c.(*ast.Link)
-			buf.WriteString(fmt.Sprintf("<%s|%s>", link.Destination, astToMrkdwn(c, source)))
-		case ast.KindImage:
-			img := c.(*ast.Image)
-			buf.WriteString(fmt.Sprintf("<%s|%s>", img.Destination, astToMrkdwn(c, source)))
-		case ast.KindAutoLink:
-			link := c.(*ast.AutoLink)
-			url := string(link.URL(source))
+		case *ast.Link:
+			buf.WriteString(fmt.Sprintf("<%s|%s>", n.Destination, astToMrkdwn(n, source)))
+		case *ast.Image:
+			buf.WriteString(fmt.Sprintf("<%s|%s>", n.Destination, astToMrkdwn(n, source)))
+		case *ast.AutoLink:
+			url := string(n.URL(source))
 			buf.WriteString(fmt.Sprintf("<%s|%s>", url, url))
-		case extast.KindStrikethrough:
+		case *extast.Strikethrough:
 			buf.WriteString("~")
-			buf.WriteString(astToMrkdwn(c, source))
+			buf.WriteString(astToMrkdwn(n, source))
 			buf.WriteString("~")
 		default:
 			buf.WriteString(astToMrkdwn(c, source))

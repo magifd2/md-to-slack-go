@@ -58,3 +58,10 @@ type RichTextObject struct {
 	Type     string            `json:"type"`
 	Elements []RichTextSection `json:"elements"`
 }
+
+// ImageBlock represents an image block.
+type ImageBlock struct {
+	Type     string `json:"type"`
+	ImageURL string `json:"image_url"`
+	AltText  string `json:"alt_text"`
+}
