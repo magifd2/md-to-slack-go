@@ -138,7 +138,7 @@ func markdownToSlackBlocks(markdown string) (*slack.SlackBlockKit, error) {
 			if headerRow != nil {
 				var headerCells []slack.RichTextObject
 				for cell := headerRow.FirstChild(); cell != nil; cell = cell.NextSibling() {
-					headerCells = append(headerCells, createRichTextCell(string(cell.Text(source)), true))
+					headerCells = append(headerCells, slack.CreateRichTextCell(string(cell.Text(source)), true))
 				}
 				tableRows = append(tableRows, headerCells)
 
@@ -146,7 +146,7 @@ func markdownToSlackBlocks(markdown string) (*slack.SlackBlockKit, error) {
 				for rowNode := headerRow.NextSibling(); rowNode != nil; rowNode = rowNode.NextSibling() {
 					var dataCells []slack.RichTextObject
 					for cell := rowNode.FirstChild(); cell != nil; cell = cell.NextSibling() {
-						dataCells = append(dataCells, createRichTextCell(string(cell.Text(source)), false))
+						dataCells = append(dataCells, slack.CreateRichTextCell(string(cell.Text(source)), false))
 					}
 					tableRows = append(tableRows, dataCells)
 				}
