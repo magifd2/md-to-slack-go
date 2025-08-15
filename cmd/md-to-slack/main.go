@@ -11,8 +11,17 @@ import (
 	"github.com/magifd2/md-to-slack-go/internal/markdown"
 )
 
+var version = "dev" // This will be overwritten by LDFLAGS
+
 func main() {
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	var input []byte
 	var err error
 	if args := flag.Args(); len(args) > 0 {
