@@ -69,3 +69,9 @@ This project uses `make` for common development tasks.
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+The implementation of the Markdown to Slack Block Kit conversion was greatly inspired by the insights from the following Qiita article.
+
+- [MarkdownをSlackのBlock Kitに変換する](https://qiita.com/yhatt/items/ebe892f341ce03d6d23f)
