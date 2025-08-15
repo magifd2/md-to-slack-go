@@ -18,23 +18,21 @@ Converts the following Markdown elements to Slack Block Kit blocks:
 
 ## Installation
 
-### From source
+Clone the repository from GitHub and build it using `make`.
 
 ```bash
-go install github.com/magifd2/md-to-slack-go/cmd/md-to-slack@latest
+git clone https://github.com/magifd2/md-to-slack-go.git
+cd md-to-slack-go
+make build
 ```
 
-### From GitHub Releases
+The binary will be available in the `bin/` directory.
+You can also install it to `/usr/local/bin` (default) by running:
+```bash
+make install
+```
 
 Alternatively, you can download a pre-compiled binary for your OS from the [GitHub Releases](https://github.com/magifd2/md-to-slack-go/releases) page.
-
-### With `make`
-
-If you have the repository cloned, you can build and install it using make:
-```bash
-make build
-make install # Default prefix is /usr/local
-```
 
 ## Usage
 
