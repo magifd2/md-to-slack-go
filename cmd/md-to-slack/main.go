@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/magifd2/md-to-slack-go/internal/slack"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -16,97 +17,31 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// SlackBlockKit is the top-level structure for the Slack Block Kit JSON.
-type SlackBlockKit struct {
-	Blocks []interface{} `json:"blocks"`
-}
-
-// HeaderBlock represents a header block.
-type HeaderBlock struct {
-	Type string    `json:"type"`
-	Text TextBlock `json:"text"`
-}
-
-// SectionBlock represents a section block.
-type SectionBlock struct {
-	Type string    `json:"type"`
-	Text TextBlock `json:"text"`
-}
-
-// DividerBlock represents a divider block.
-type DividerBlock struct {
-	Type string `json:"type"`
-}
-
-// TableBlock represents a table block.
-type TableBlock struct {
-	Type string             `json:"type"`
-	Rows [][]RichTextObject `json:"rows"`
-}
-
-// TextBlock is a text object that can contain plain_text or mrkdwn.
-type TextBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text"`
-	Emoji bool   `json:"emoji,omitempty"`
-}
-
-// RichTextObject represents a rich_text object used within table cells.
-type RichTextObject struct {
-	Type     string `json:"type"`
-	Elements []struct {
-		Type     string `json:"type"`
-		Elements []struct {
-			Type  string `json:"type"`
-			Text  string `json:"text"`
-			Style *struct {
-				Bold bool `json:"bold,omitempty"`
-			} `json:"style,omitempty"`
-		} `json:"elements"`
-	} `json:"elements"`
-}
-
 // createRichTextCell generates a rich_text cell object for Slack table blocks.
-func createRichTextCell(content string, isHeader bool) RichTextObject {
-	// If the cell text is empty, insert a space to avoid API errors.
+func createRichTextCell(content string, isHeader bool) slack.RichTextObject {
 	if strings.TrimSpace(content) == "" {
 		content = " "
 	}
 
-	cell := RichTextObject{
-		Type: "rich_text",
-		Elements: []struct {
-			Type     string `json:"type"`
-			Elements []struct {
-				Type  string `json:"type"`
-				Text  string `json:"text"`
-				Style *struct {
-					Bold bool `json:"bold,omitempty"`
-				} `json:"style,omitempty"`
-			} `json:"elements"`
-		}{
-			{
-				Type: "rich_text_section",
-				Elements: []struct {
-					Type  string `json:"type"`
-					Text  string `json:"text"`
-					Style *struct {
-						Bold bool `json:"bold,omitempty"`
-					} `json:"style,omitempty"`
-				}{
-					{
-						Type: "text",
-						Text: content,
-					},
-				},
-			},
-		},
+	textElement := slack.RichTextElement{
+		Type: "text",
+		Text: content,
 	}
+
 	if isHeader {
-		cell.Elements[0].Elements[0].Style = &struct {
-			Bold bool `json:"bold,omitempty"`
-		}{Bold: true}
+		textElement.Style = &slack.RichTextStyle{Bold: true}
 	}
+
+	sectionElement := slack.RichTextSection{
+		Type:     "rich_text_section",
+		Elements: []slack.RichTextElement{textElement},
+	}
+
+	cell := slack.RichTextObject{
+		Type:     "rich_text",
+		Elements: []slack.RichTextSection{sectionElement},
+	}
+
 	return cell
 }
 
@@ -154,7 +89,7 @@ func astToMrkdwn(node ast.Node, source []byte) string {
 }
 
 // markdownToSlackBlocks converts a Markdown string to a Slack Block Kit JSON object.
-func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
+func markdownToSlackBlocks(markdown string) (*slack.SlackBlockKit, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 	)
@@ -167,14 +102,14 @@ func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
 		case ast.KindHeading:
 			heading := node.(*ast.Heading)
 			if heading.Level <= 2 {
-				blocks = append(blocks, HeaderBlock{Type: "header", Text: TextBlock{Type: "plain_text", Text: string(heading.Text(source)), Emoji: true}})
+				blocks = append(blocks, slack.HeaderBlock{Type: "header", Text: slack.TextBlock{Type: "plain_text", Text: string(heading.Text(source)), Emoji: true}})
 			} else {
-				blocks = append(blocks, SectionBlock{Type: "section", Text: TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", string(heading.Text(source)))}})
+				blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", string(heading.Text(source)))}})
 			}
 		case ast.KindParagraph:
 			text := astToMrkdwn(node, source)
 			if strings.TrimSpace(text) != "" {
-				blocks = append(blocks, SectionBlock{Type: "section", Text: TextBlock{Type: "mrkdwn", Text: text}})
+				blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: text}})
 			}
 		case ast.KindBlockquote:
 			quote := astToMrkdwn(node, source)
@@ -182,7 +117,7 @@ func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
 			for i := range lines {
 				lines[i] = "> " + lines[i]
 			}
-			blocks = append(blocks, SectionBlock{Type: "section", Text: TextBlock{Type: "mrkdwn", Text: strings.Join(lines, "\n")}})
+			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: strings.Join(lines, "\n")}})
 		case ast.KindFencedCodeBlock:
 			codeBlock := node.(*ast.FencedCodeBlock)
 			lang := string(codeBlock.Info.Text(source))
@@ -191,17 +126,17 @@ func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
 				line := codeBlock.Lines().At(i)
 				codeLines = append(codeLines, string(line.Value(source)))
 			}
-			blocks = append(blocks, SectionBlock{Type: "section", Text: TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("```%s\n%s```", lang, strings.Join(codeLines, ""))}})
+			blocks = append(blocks, slack.SectionBlock{Type: "section", Text: slack.TextBlock{Type: "mrkdwn", Text: fmt.Sprintf("```%s\n%s```", lang, strings.Join(codeLines, ""))}})
 		case ast.KindThematicBreak:
-			blocks = append(blocks, DividerBlock{Type: "divider"})
+			blocks = append(blocks, slack.DividerBlock{Type: "divider"})
 		case extast.KindTable:
 			tableNode := node.(*extast.Table)
-			var tableRows [][]RichTextObject
+			var tableRows [][]slack.RichTextObject
 
 			// The first child of a Table is the Header row.
 			headerRow := tableNode.FirstChild()
 			if headerRow != nil {
-				var headerCells []RichTextObject
+				var headerCells []slack.RichTextObject
 				for cell := headerRow.FirstChild(); cell != nil; cell = cell.NextSibling() {
 					headerCells = append(headerCells, createRichTextCell(string(cell.Text(source)), true))
 				}
@@ -209,7 +144,7 @@ func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
 
 				// Process the rest of the rows (the body).
 				for rowNode := headerRow.NextSibling(); rowNode != nil; rowNode = rowNode.NextSibling() {
-					var dataCells []RichTextObject
+					var dataCells []slack.RichTextObject
 					for cell := rowNode.FirstChild(); cell != nil; cell = cell.NextSibling() {
 						dataCells = append(dataCells, createRichTextCell(string(cell.Text(source)), false))
 					}
@@ -217,13 +152,13 @@ func markdownToSlackBlocks(markdown string) (*SlackBlockKit, error) {
 				}
 			}
 
-			blocks = append(blocks, TableBlock{
+			blocks = append(blocks, slack.TableBlock{
 				Type: "table",
 				Rows: tableRows,
 			})
 		}
 	}
-	return &SlackBlockKit{Blocks: blocks}, nil
+	return &slack.SlackBlockKit{Blocks: blocks}, nil
 }
 
 func main() {
