@@ -126,10 +126,15 @@ func listToMrkdwn(l *ast.List, source []byte, depth int) string {
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
-// astToMrkdwn recursively traverses AST nodes and converts them to a Slack mrkdwn formatted string.
 func astToMrkdwn(node ast.Node, source []byte) string {
 	var buf bytes.Buffer
 	for c := node.FirstChild(); c != nil; c = c.NextSibling() {
+		kind := c.Kind().String()
+		if kind == "HardLineBreak" || kind == "SoftLineBreak" {
+			buf.WriteString("\n")
+			continue
+		}
+
 		switch n := c.(type) {
 		case *ast.Text:
 			buf.WriteString(string(n.Text(source)))

@@ -6,7 +6,7 @@ Here is a link to [Google](https://www.google.com).
 
 ### Heading 3
 
-> This is a blockquote.
+> This is a blockquote.  
 > It can span multiple lines.
 
 ---
