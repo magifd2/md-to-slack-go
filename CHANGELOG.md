@@ -1,6 +1,11 @@
 
 # Changelog
 
+## v1.1.0 - 2025-08-17
+
+### Added
+- `feat`: Enhance --help output for md-to-slack command (`dbf955d`)
+
 ## v1.0.0 - 2025-08-15
 
 ### Added
