@@ -15,12 +15,26 @@ var version = "dev" // This will be overwritten by LDFLAGS
 
 func main() {
 	versionFlag := flag.Bool("version", false, "Print version and exit")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "md-to-slack converts Markdown text to Slack Block Kit JSON.\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [FILE]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  If FILE is provided, reads Markdown from the specified file. Otherwise, reads from standard input.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  md-to-slack < input.md\n")
+		fmt.Fprintf(os.Stderr, "  md-to-slack input.md\n")
+		fmt.Fprintf(os.Stderr, "  echo '# Hello' | md-to-slack\n")
+	}
+
 	flag.Parse()
 
 	if *versionFlag {
 		fmt.Println(version)
 		os.Exit(0)
 	}
+
 
 	var input []byte
 	var err error
